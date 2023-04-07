@@ -782,6 +782,8 @@ declare namespace WAWebJS {
         acceptGroupV4Invite: () => Promise<{status: number}>,
         /** Deletes the message from the chat */
         delete: (everyone?: boolean) => Promise<void>,
+        /** replys privately with message and options */
+        sendPrivateReply: (content: MessageContent, options?: MessageSendOptions) => Promise<Message>,
         /** Downloads and returns the attached message media */
         downloadMedia: () => Promise<MessageMedia>,
         /** Returns the Chat this message was sent in */

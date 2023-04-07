@@ -382,6 +382,9 @@ class Message extends Base {
         }, this.id._serialized, chatId);
     }
 
+   
+
+
     /**
      * Downloads and returns the attatched message media
      * @returns {Promise<MessageMedia>}
