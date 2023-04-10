@@ -41,6 +41,7 @@ const util = require('util');
 const wav = require("node-wav");
 const ffmpeg = require('fluent-ffmpeg');
 const { exec } = require('child_process');
+const { createFile } = require('fs-extra');
 
 //const process = require('node:process');
 
@@ -79,23 +80,7 @@ client.on('ready', () => {
 
 //----------------------------------------------------------------------------------------------------------------------------------
 //OPEN AI SPEECH TO TEXT
-/*
-const filePath = path.join(__dirname, "spToTe.mp3");
-const model = 'whisper-1';
 
-const formData = new FormData();
-formData.append("model", model);
-formData.append("file", fs.createReadStream(filePath));
-
-axios.post("https://api.openai.com/v1/audio/transcriptions", formData,{
-    headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": `multipart/form-data; boundry=${formData._boundary}`,
-    }
-})
-.then((response) => {
-    console.log(response.data);
-})*/
 //----------------------------------------------------------------------------------------------------------------------------------
 
 // This function handles the missing media in the chat by retrieving messages from the chat until the media is available
@@ -116,7 +101,7 @@ async function downloadQuotedMedia(quotedMsg, messageId, chat, maxRetries = 5) {
 		console.log(`Error fetching messages. Retrying in 5 seconds... (attempt ${counter}/${maxRetries})`);
 		await new Promise(resolve => setTimeout(resolve, 5000));
 	  }
-  
+      
 	  counter++;
 	}
 	if (!attachmentData) {
@@ -126,23 +111,21 @@ async function downloadQuotedMedia(quotedMsg, messageId, chat, maxRetries = 5) {
 	return attachmentData;
 
 }
-
-async function SpeechToTextTranscript(base64String, message) {
+async function createFiles(base64String){
     const binaryString = Buffer.from(base64String, 'base64').toString('binary');
-
-    // Extract PCM data from binary string
+// Extract PCM data from binary string
     const pcmData = Buffer.from(binaryString, 'binary');
-    fs.writeFile('output.ogg', pcmData, (err) => {
+    fs.writeFile('input.ogg', pcmData, (err) => {
         if (err) throw err;
         console.log('The file has been saved!');
     });
 
-    const inputFile = 'output.ogg';
+    const inputFile = 'input.ogg';
 
     const outputFile = 'audio.mp3';
 
-    const command2 = `ffmpeg -i "${inputFile}" -acodec libmp3lame "${outputFile}"`;
-    const command = `ffmpeg -i "${inputFile}" "${outputFile}"`;
+    //const command2 = `ffmpeg -i "${inputFile}" -acodec libmp3lame "${outputFile}"`;
+    const command = `ffmpeg -i ${inputFile} ${outputFile}`;
 
     // Execute FFmpeg command
     exec(command, (error, stdout, stderr) => {
@@ -156,9 +139,32 @@ async function SpeechToTextTranscript(base64String, message) {
       }
       console.log('Conversion complete');
     });
+}
 
+async function SpeechToTextTranscript(base64String, msg) {
+    await createFiles(base64String);
+    const chat = await msg.getChat();
+    msg.react('☠️');
+    const filePath = path.join(__dirname, "audio.mp3");
+    const model = 'whisper-1';
 
-    
+    const formData = new FormData();
+    formData.append("model", model);
+    formData.append("file", fs.createReadStream(filePath));
+    setTimeout(async () => {
+        try {
+            const response = await axios.post("https://api.openai.com/v1/audio/transcriptions", formData,{
+                headers: {
+                    Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+                    "Content-Type": `multipart/form-data; boundry=${formData._boundary}`,
+                }
+            });
+            chat.sendMessage(response.data.text);
+            msg.react('🥳');
+        } catch (err) {
+            console.log(err);
+        }
+    },10000); // delay of 2 seconds
 }
 
 
@@ -175,27 +181,13 @@ async function dealWithAudio(message){
 		if (quotedMsg.hasMedia) {
 			// If is a voice message, we download it and send it to the api
 			if (quotedMsg.type.includes("ptt") || quotedMsg.type.includes("audio")) {
+                
                 const maxRetries = 1000;
+                message.react("😎");
 				const attachmentData = await downloadQuotedMedia(quotedMsg, messageId, chat, maxRetries);
+                message.react("😱");
 				if (attachmentData) {
-					SpeechToTextTranscript(attachmentData.data, message)
-					.then((body) => {
-						console.log(body); // Handle the returned data here
-						const data = JSON.parse(body);
-						for (const result of data.results) {
-							const transcript = result.transcript;
-							
-							chat.sendMessage(responseMsgHeader + "\n\n" + transcript, {
-								quotedMessageId: messageId
-							});
-						}
-					})
-					.catch((err) => {
-						console.error(err); // Handle the error here
-						chat.sendMessage(responseMsgHeaderError, {
-							quotedMessageId: messageId
-						});
-					});
+				    await SpeechToTextTranscript(attachmentData.data, message);
 				} else {
 					message.reply("The file couldn't be fetched");
 				}
@@ -383,6 +375,7 @@ client.on('message_create', async msg => {
         console.log('\x1b[90m{'+ `\x1b[31m[${contactNumber} : \x1b[34m${contactPushName}\x1b[31m]`+ `\x1b[90m --to-->` + ` \x1b[36m${msgTo}\x1b[31m `+`\x1b[90m:`+` \x1b[32m${msg.body}\x1b[31m`+'\x1b[90m}');
 
         if (msg.hasQuotedMsg && (msg.body === "texto" || msg.body === "Texto")) { // check if message is a reply
+            msg.react('👍');
            dealWithAudio(msg);
         }
         
@@ -441,7 +434,7 @@ client.on('message' , async msg => {
     }
 
     const [firstWord, restOfStr] = getFirstWord(msg.body); //no borres esto porque lo uso en varios ifs
-    if((firstWord === 'gpt:'  || firstWord === 'Gpt:')  && chatIsAppropiate(msg) && chat.name === 'Csal(Amadé)ád'){
+    if((firstWord === 'gpt'  || firstWord === 'Gpt')  && (chatIsAppropiate(msg) && chat.name === 'Csal(Amadé)ád')){
         runCompletion(restOfStr, "Sos un asistente que responde con simpleza y es muy inteligente").then(result => msg.reply(result));      
     }
 
