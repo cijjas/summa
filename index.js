@@ -174,7 +174,7 @@ async function SpeechToTextTranscript(msg) {
 
 
 
-async function dealWithAudio(message){
+async function getTranscript(message){
 
     const chat = await message.getChat();
     var ans = "noTengoInfoPorqueNoHayAudio"; // aca voy a guardar la respuesta de la api
@@ -392,16 +392,15 @@ async function createMeSummarySUMMA(msg, groupName){
     }
 }
 
-const queue1 = async.queue(async (msg, callback) => {
-    // check if message is a reply and contains the text "texto"
-    const transcript = await dealWithAudio(msg);
+const queue = async.queue(async (msg, callback) => {
+    const transcript = await getTranscript(msg);
     if(transcript !== "noTengoInfoPorqueNoHayAudio"){
         if(msg.body === "Texto" || msg.body === "texto" || msg.body === "TEXTO"){
             msg.react('👍');
             msg.reply(transcript);
         }
-        if(msg.body  === "Gptaudio" || msg.body === "gptaudio" || msg.body === "GPTAUDIO"){
-            msg.react('FUNCA');
+        else if(msg.body  === "Gptaudio" || msg.body === "gptaudio" || msg.body === "GPTAUDIO"){
+            msg.react('👍');
             runCompletion(transcript, "Sos un asistente que responde con simpleza y es muy inteligente").then(result => msg.reply(result));      
         }
     }
@@ -411,50 +410,6 @@ const queue1 = async.queue(async (msg, callback) => {
   }, 1);
 
 
-client.on('message_create', async msg => {
-    
-    
-    if(msg.fromMe) {
-        const contact = await msg.getContact();
-        const chat  = await msg.getChat();
-        const msgTo = chat.name;
-        const contactPushName = contact.pushname;
-        const contactNumber = contact.number;
-        console.log('\x1b[90m{'+ `\x1b[31m[${contactNumber} : \x1b[34m${contactPushName}\x1b[31m]`+ `\x1b[90m --to-->` + ` \x1b[36m${msgTo}\x1b[31m `+`\x1b[90m:`+` \x1b[32m${msg.body}\x1b[31m`+'\x1b[90m}');
-
-        queue1.push(msg);
-
-        
-        
-        
-        
-
-        const [firstWord, restOfStr] = getFirstWord(msg.body);
-        if(firstWord === 'resumime' || firstWord === 'Resumime' || firstWord === 'resumi' || firstWord === 'Resumi'){
-            const groupName = restOfStr;
-            if(groupName){
-                createMeSummarySUMMA(msg, groupName);
-            }
-
-        }
-        if((firstWord === 'gpt'  || firstWord === 'Gpt') && chatIsAppropiate(msg)){
-            runCompletion(restOfStr, "Sos un asistente que responde con simpleza y es muy inteligente").then(result => msg.reply(result));      
-        }
-        if(chat.isGroup && msg.body !== 'Summa'){
-            await saveMessagesSUMMA(msg);
-        }
-        else if(msg.body === 'summa' || msg.body === 'Summa'){
-            msg.react('👍');
-            await createSummarySUMMA(msg);
-        }
-        if(msg.body === 'pipe' || msg.body === 'Pipe' && chatIsAppropiate(msg)){
-            msg.react('👍');
-            const reply = await createSummaryPIPE(msg, 10);
-            msg.reply(reply);
-        }
-    }
-
-});
 
 
 function getFirstWord(str) {
@@ -462,14 +417,72 @@ function getFirstWord(str) {
     const firstWord = words[0];
     const restOfStr = words.slice(1).join(" ");
     return [firstWord, restOfStr];
-  }
+}
 
-
-
-// cuando recibe un mensaje ageno que no es el bot ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-client.on('message' , async msg => {
+async function handleMessage(msg){
+    const [firstWord, restOfStr] = getFirstWord(msg.body);
+    
+    if(restOfStr){ // si tiene otro parametro ademas de la primera  palabra
+        switch (firstWord.toLowerCase()) {
+            case 'resumi':
+                const chatName = restOfStr;
+                if(chatName){
+                    msg.react('👍');
+                    createMeSummarySUMMA(msg, chatName);
+                }
+                break;
+            case 'gpt':
+                msg.react('👍');
+                runCompletion(restOfStr, "Sos un asistente que responde con simpleza y es muy inteligente").then(result => msg.reply(result));
+                break;
+            case 'print':
+                msg.react('👍');
+                const [secondWord,restOfRestOfStr]=getFirstWord(restOfStr)
+                var cantidad=undefined;
+                if (!isNaN(secondWord)) {
+                    cantidad=secondWord;
+                }
+                const reply = await print(msg, cantidad);
+                msg.reply(reply);
+                    break;
+    
+            default:
+                break;
+        }
+    }
+    else{ // si es un comando de solo una palabra
+        switch (msg.body.toLowerCase()) {
+            case 'summa':
+                msg.react('👍');
+                await createSummarySUMMA(msg);
+                break;
+            case 'texto':
+                if(msg.hasQuotedMsg){
+                    queue.push(msg);
+                }
+                break;
+            case 'pipe':
+                msg.react('👍');
+                const reply = await createSummaryPIPE(msg, 10);
+                msg.reply(reply);
+                break;
+                
+            default:
+                if (msg.body.toLowerCase() !== 'summa') {
+                    await saveMessagesSUMMA(msg);
+                }
+                break;
+        }
+    }
+    
+    
+    
+    
     
    
+    
+}
+async function printFormattedMsg(msg){
     const contact = await msg.getContact();
     const chat  = await msg.getChat();
     const msgTo = chat.name;
@@ -477,41 +490,19 @@ client.on('message' , async msg => {
     const contactNumber = contact.number;
     console.log('\x1b[90m{'+ `\x1b[31m[${contactNumber} : \x1b[34m${contactPushName}\x1b[31m]`+ `\x1b[90m --to-->` + ` \x1b[36m${msgTo}\x1b[31m `+`\x1b[90m:`+` \x1b[32m${msg.body}\x1b[31m`+'\x1b[90m}');
 
-    if (msg.hasQuotedMsg && (msg.body === "texto" || msg.body === "Texto")){
-        msg.react('👍');
-        queue1.push(msg);
-    } 
-
-
-    const [firstWord, restOfStr] = getFirstWord(msg.body); //no borres esto porque lo uso en varios ifs
-    if((firstWord === 'gpt'  || firstWord === 'Gpt')  && (chatIsAppropiate(msg) || chat.name === 'Csal(Amadé)ád')){
-        runCompletion(restOfStr, "Sos un asistente que responde con simpleza y es muy inteligente").then(result => msg.reply(result));      
+}
+client.on('message_create', async msg => {
+    if(msg.fromMe) {
+        printFormattedMsg(msg);
+        handleMessage(msg);
     }
-
-    if(chat.isGroup && firstWord.toLowerCase() !== 'summa' ) {
-        await saveMessagesSUMMA(msg);
-    }
-    if (firstWord.toLowerCase() === 'summa') {  
-        msg.react('👍');
-        await createSummarySUMMA(msg);
-    }
-    else if (firstWord.toLowerCase() === 'print' && chatIsAppropiate(msg)  ) {       // https://docs.wwebjs.dev/Chat.html 
-        msg.react('👍');
-        const [secondWord,restOfRestOfStr]=getFirstWord(restOfStr)
-        var cantidad=undefined;
-        if (!isNaN(secondWord)) {
-            cantidad=secondWord;
-        }
-        const reply = await print(msg, cantidad);
-        msg.reply(reply);
-    }
+});
+// cuando recibe un mensaje ageno que no es el bot ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+client.on('message' , async msg => {
+    printFormattedMsg(msg);
+    handleMessage(msg);
     
-
-
 });
 
-function chatIsAppropiate(message){
-    const chat = message.getChat();
-     return (chat.name !== 'BD I' && chat.name !== 'Inge Soft I' && chat.name !== 'SO' && chat.name !== 'HCI' && chat.name !== 'Photo Dump Elite Elite') || chat.name === 'Justi' || chat.name === '+54 9 11 4193-6666';
-}
+
 client.initialize();
